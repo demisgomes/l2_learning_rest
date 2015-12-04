@@ -51,7 +51,7 @@ try:
 except:
   weblog = core.getLogger("webcore.server")
 
-idTableSwitches=[]
+idTableSwitches={}
 
 # We don't want to flood immediately when a switch connects.
 # Can be overriden on commandline.
@@ -190,10 +190,7 @@ class LearningSwitch (object):
         # 6
         log.debug("installing flow for %s.%i -> %s.%i" %
                   (packet.src, event.port, packet.dst, port))
-        for switch in idTableSwitches:
-                #if switch['dpid']==str(event.connection).split(" ")[0][1:]:
-                if switch['dpid']==str(event.connection.dpid):
-                        switch['table']=self.macToPort
+        idTableSwitches[str(event.connection.dpid)]=self.macToPort
         msg = of.ofp_flow_mod()
         msg.match = of.ofp_match.from_packet(packet, event.port)
         msg.idle_timeout = 10
@@ -213,9 +210,7 @@ class l2_learning (object):
 
   def _handle_ConnectionUp (self, event):
     log.debug("Connection %s" % (event.connection,))
-    #dpid={'dpid': str(event.connection).split(" ")[0][1:], 'table':[]}
-    dpid={'dpid': str(event.connection.dpid), 'table':[]}
-    idTableSwitches.append(dpid)
+    idTableSwitches[str(event.connection.dpid)]={}
     LearningSwitch(event.connection, self.transparent)
 
 def _setAttribs (parent, child):
@@ -310,13 +305,10 @@ class CoreHandler (SplitRequestHandler):
       self.send_info(is_get)
     elif self.path.startswith("/favicon."):
       self.send_favicon(is_get)
-    elif self.path == "/switches":
+    elif self.path == "/switches" or self.path == "/switches/":
         self.send_switches(is_get)
-    elif self.path.startswith("/switches/"):
-	for switch in idTableSwitches:
-		if self.path[10:]==switch['dpid']:
-        		self.send_switch(self.path[10:],is_get)
-			break
+    elif self.path.startswith("/switches/") and self.path[10:] in idTableSwitches.keys():
+        self.send_switch(self.path[10:],is_get)
     else:
       self.send_error(404, "File not found on CoreHandler")
 
@@ -330,8 +322,8 @@ class CoreHandler (SplitRequestHandler):
 
   def send_switches(self,is_get=True):
     switchesList={'switches':[]}
-    for switch in idTableSwitches:
-	switchesList['switches'].append({'dpid':switch['dpid']})
+    for switch_id in idTableSwitches.keys():
+	switchesList['switches'].append({'dpid':switch_id})
     self.send_response(200)
     self.send_header("Content-type", "application/json")
     self.end_headers()
@@ -341,9 +333,7 @@ class CoreHandler (SplitRequestHandler):
   def send_switch(self,path,is_get=True):
     switchTable={'table':[]}
     tempTable=[]
-    for switch in idTableSwitches:
-        if switch['dpid']==path:
-                switchTable['table']=switch['table']
+    switchTable['table']=idTableSwitches[path]
     for rule in switchTable['table']:
         new_rule={'mac':str(rule),'interface':switchTable['table'][rule]}
         tempTable.append(new_rule)
